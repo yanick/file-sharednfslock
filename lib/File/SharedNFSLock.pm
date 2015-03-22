@@ -110,14 +110,10 @@ SCOPE: {
     croak("Need 'file' argument!")
       if not defined $args{file};
 
-    my $uniquetoken = delete $args{unique_token};
-    if (defined $uniquetoken) {
-      if ($uniquetoken eq '1') {
-        $args{token} = join '', map $chars[rand @chars], (1..20);
-      }
-      else {
-        $args{token} = $uniquetoken;
-      }
+    if ( my $uniquetoken = delete $args{unique_token} ) {
+      $args{token} = $uniquetoken eq '1'
+        ? join '', map $chars[rand @chars], (1..20)
+        : $uniquetoken;
     }
 
     my $self = bless {
@@ -155,24 +151,22 @@ sub lock {
   my $before_time = Time::HiRes::time();
   warn "Before time is $before_time\n" if DEBUG;
   while (1) {
-    if ($self->_write_lock_file()) {
-      return 1;
-    } else {
-      # check whether lock is stale
-      if ($self->_is_stale_lock) {
-        unlink $self->_lock_file;
-        unlink $self->_unique_lock_file;
-      } else {
-        # hmm. lock valid, wait a bit or bail out
-        my $now = Time::HiRes::time();
-        warn "Time now is $now\n" if DEBUG;
-        if ($now-$before_time > $self->{timeout_acquire}) {
-          $self->_unlink_lock_file;
-          return 0;
-        }
+    return 1 if $self->_write_lock_file;
 
-        Time::HiRes::sleep($self->{poll_interval}) if $self->{poll_interval};
+    # check whether lock is stale
+    if ($self->_is_stale_lock) {
+      unlink $self->_lock_file;
+      unlink $self->_unique_lock_file;
+    } else {
+      # hmm. lock valid, wait a bit or bail out
+      my $now = Time::HiRes::time();
+      warn "Time now is $now\n" if DEBUG;
+      if ($now-$before_time > $self->{timeout_acquire}) {
+        $self->_unlink_lock_file;
+        return 0;
       }
+
+      Time::HiRes::sleep($self->{poll_interval}) if $self->{poll_interval};
     }
   } # end while(1)
 }
@@ -203,13 +197,14 @@ sub got_lock {
   my $self = shift;
   # Check whether somebody else timed out the lock
   my $nlinks = ( stat($self->_unique_lock_file) )[STAT_NLINKS];
+
   if ( (defined $nlinks) and ($nlinks == 2) ) {
     warn "got_lock: LOCKED with ".$self->_unique_lock_file."\n" if DEBUG;
     return 1;
-  } else {
-    warn "got_lock: NOT LOCKED with ".$self->_unique_lock_file."\n" if DEBUG;
-    return 0;
-  }
+  } 
+
+  warn "got_lock: NOT LOCKED with ".$self->_unique_lock_file."\n" if DEBUG;
+  return 0;
 }
 *locked = \&got_lock;
 
@@ -221,7 +216,7 @@ Checks file is currently locked by someone.
 
 sub is_locked {
   # Simply check for presence of lock_file
-  return (-f shift->_lock_file) ? 1 : 0;
+  return -f shift->_lock_file;
 }
 
 
@@ -305,10 +300,8 @@ sub _is_stale_lock {
 
   local $/ = "\012";
   my @lines = <$fh>;
-  if (Time::HiRes::time()-$lines[0] > $self->{timeout_stale}) {
-    return 1;
-  }
-  return 0;
+
+  return Time::HiRes::time()-$lines[0] > $self->{timeout_stale};
 }
 
 1;
