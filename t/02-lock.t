@@ -6,11 +6,10 @@ use Test::More;
 use Config;
 
 BEGIN {
-   if ($Config{useithreads}) {
-      require threads;
-   } else {
-      plan skip_all => 'Need Perl with thread support for these tests';
-   }
+    plan skip_all => 'Need Perl with thread support for these tests'
+        unless $Config{useithreads};
+    
+    require threads;
 };
 
 
